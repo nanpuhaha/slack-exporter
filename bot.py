@@ -36,9 +36,9 @@ def export_channel():
     exports_subdir = "exports"
     exports_dir = os.path.join(app.root_path, exports_subdir)
     file_ext = ".txt" if export_mode == "text" else ".json"
-    filename = "%s-ch_%s-%s%s" % (team_domain, ch_id, str(uuid4().hex)[:6], file_ext)
+    filename = f"{team_domain}-ch_{ch_id}-{str(uuid4().hex)[:6]}{file_ext}"
     filepath = os.path.join(exports_dir, filename)
-    loc = urljoin(request.url_root, "download/%s" % filename)
+    loc = urljoin(request.url_root, f"download/{filename}")
 
     if not os.path.isdir(exports_dir):
         os.makedirs(exports_dir, exist_ok=True)
@@ -98,9 +98,9 @@ def export_replies():
     exports_subdir = "exports"
     exports_dir = os.path.join(app.root_path, exports_subdir)
     file_ext = ".txt" if export_mode == "text" else ".json"
-    filename = "%s-re_%s-%s%s" % (team_domain, ch_id, str(uuid4().hex)[:6], file_ext)
+    filename = f"{team_domain}-re_{ch_id}-{str(uuid4().hex)[:6]}{file_ext}"
     filepath = os.path.join(exports_dir, filename)
-    loc = urljoin(request.url_root, "download/%s" % filename)
+    loc = urljoin(request.url_root, f"download/{filename}")
 
     if export_mode == "text":
         header_str = "Threads in: %s\n%s Messages" % (ch_name, len(ch_replies))

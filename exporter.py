@@ -38,7 +38,7 @@ def handle_print(text, response_url=None):
 # slack api (OAuth 2.0) now requires auth tokens in HTTP Authorization header
 # instead of passing it as a query parameter
 try:
-    HEADERS = {"Authorization": "Bearer %s" % os.environ["SLACK_USER_TOKEN"]}
+    HEADERS = {"Authorization": f'Bearer {os.environ["SLACK_USER_TOKEN"]}'}
 except KeyError:
     handle_print("Missing SLACK_USER_TOKEN in environment variables", response_url)
     sys.exit(1)
@@ -79,26 +79,26 @@ def get_at_cursor(url, params, cursor=None, response_url=None):
     r = get_data(url, params)
 
     if r.status_code != 200:
-        handle_print("ERROR: %s %s" % (r.status_code, r.reason), response_url)
+        handle_print(f"ERROR: {r.status_code} {r.reason}", response_url)
         sys.exit(1)
 
     d = r.json()
 
     try:
         if d["ok"] is False:
-            handle_print("I encountered an error: %s" % d, response_url)
+            handle_print(f"I encountered an error: {d}", response_url)
             sys.exit(1)
 
         next_cursor = None
         if "response_metadata" in d and "next_cursor" in d["response_metadata"]:
             next_cursor = d["response_metadata"]["next_cursor"]
-            if str(next_cursor).strip() == "":
+            if not str(next_cursor).strip():
                 next_cursor = None
 
         return next_cursor, d
 
     except KeyError as e:
-        handle_print("Something went wrong: %s." % e, response_url)
+        handle_print(f"Something went wrong: {e}.", response_url)
         return None, []
 
 
@@ -115,7 +115,7 @@ def paginated_get(url, params, combine_key=None, response_url=None):
                 data[combine_key]
             )
         except KeyError as e:
-            handle_print("Something went wrong: %s." % e, response_url)
+            handle_print(f"Something went wrong: {e}.", response_url)
             sys.exit(1)
 
         if next_cursor is None:
@@ -150,8 +150,7 @@ def get_file_list():
         response = get_data("https://slack.com/api/files.list", params={"page": current_page})
         json_data = response.json()
         total_pages = json_data["paging"]["pages"]
-        for file in json_data["files"]:
-            yield file
+        yield from json_data["files"]
         current_page += 1
 
 
@@ -231,12 +230,12 @@ def parse_channel_list(channels, users):
         else:
             ch_type = "channel"
         if "creator" in channel:
-            ch_ownership = "created by %s" % name_from_uid(channel["creator"], users)
+            ch_ownership = f'created by {name_from_uid(channel["creator"], users)}'
         elif "user" in channel:
-            ch_ownership = "with %s" % name_from_uid(channel["user"], users)
+            ch_ownership = f'with {name_from_uid(channel["user"], users)}'
         else:
             ch_ownership = ""
-        ch_name = " %s:" % ch_name if ch_name.strip() != "" else ch_name
+        ch_name = f" {ch_name}:" if ch_name.strip() != "" else ch_name
         result += "[%s]%s %s%s %s\n" % (
             ch_id,
             ch_name,
@@ -253,48 +252,51 @@ def name_from_uid(user_id, users, real=False):
         if user["id"] != user_id:
             continue
 
-        if real:
-            try:
-                return user["profile"]["real_name"]
-            except KeyError:
-                try:
-                    return user["profile"]["display_name"]
-                except KeyError:
-                    return "[no full name]"
-        else:
+        if not real:
             return user["name"]
 
+        try:
+            return user["profile"]["real_name"]
+        except KeyError:
+            try:
+                return user["profile"]["display_name"]
+            except KeyError:
+                return "[no full name]"
     return "[null user]"
 
 
 def name_from_ch_id(channel_id, channels):
-    for channel in channels:
-        if channel["id"] == channel_id:
-            return (
+    return next(
+        (
+            (
                 (channel["user"], "Direct Message")
                 if "user" in channel
                 else (channel["name"], "Channel")
             )
-    return "[null channel]"
+            for channel in channels
+            if channel["id"] == channel_id
+        ),
+        "[null channel]",
+    )
 
 
 def parse_user_list(users):
     result = ""
     for u in users:
-        entry = "[%s]" % u["id"]
+        entry = f'[{u["id"]}]'
 
         try:
-            entry += " %s" % u["name"]
+            entry += f' {u["name"]}'
         except KeyError:
             pass
 
         try:
-            entry += " (%s)" % u["profile"]["real_name"]
+            entry += f' ({u["profile"]["real_name"]})'
         except KeyError:
             pass
 
         try:
-            entry += ", %s" % u["tz"]
+            entry += f', {u["tz"]}'
         except KeyError:
             pass
 
@@ -314,9 +316,7 @@ def parse_user_list(users):
         if "is_app_user" in u and u["is_app_user"]:
             u_type += "app_user|"
 
-        if u_type.endswith("|"):
-            u_type = u_type[:-1]
-
+        u_type = u_type.removesuffix("|")
         entry += ", " if u_type.strip() != "" else ""
         entry += "%s\n" % u_type
         result += entry
@@ -344,9 +344,7 @@ def parse_channel_history(msgs, users, check_thread=False):
         )
         text = msg["text"] if msg["text"].strip() != "" else "[no message content]"
         for u in [x["id"] for x in users]:
-            text = str(text).replace(
-                "<@%s>" % u, "<@%s> (%s)" % (u, name_from_uid(u, users))
-            )
+            text = str(text).replace(f"<@{u}>", f"<@{u}> ({name_from_uid(u, users)})")
 
         entry = "Message at %s\nUser: %s (%s)\n%s" % (
             timestamp,
@@ -357,8 +355,7 @@ def parse_channel_history(msgs, users, check_thread=False):
         if "reactions" in msg:
             rxns = msg["reactions"]
             entry += "\nReactions: " + ", ".join(
-                "%s (%s)"
-                % (x["name"], ", ".join(name_from_uid(u, users) for u in x["users"]))
+                f'{x["name"]} ({", ".join(name_from_uid(u, users) for u in x["users"])})'
                 for x in rxns
             )
         if "files" in msg:
@@ -369,11 +366,11 @@ def parse_channel_history(msgs, users, check_thread=False):
             ok_files = [f for f in files if f not in deleted]
             entry += "\nFiles:\n"
             entry += "\n".join(
-                " - [%s] %s, %s" % (f["id"], f["name"], f["url_private_download"])
+                f' - [{f["id"]}] {f["name"]}, {f["url_private_download"]}'
                 for f in ok_files
             )
             entry += "\n".join(
-                " - [%s] [deleted, oversize, or unavailable file]" % f["id"]
+                f' - [{f["id"]}] [deleted, oversize, or unavailable file]'
                 for f in deleted
             )
 
@@ -408,7 +405,7 @@ def save_files(out_dir):
         files_dir = os.path.join(out_dir, "files")
         os.makedirs(files_dir, exist_ok=True)
         destination_path = os.path.join(files_dir, destination_filename)
-        print("Downloading file to %s" % destination_path)
+        print(f"Downloading file to {destination_path}")
         response = requests.get(url, headers=HEADERS)
         with open(destination_path, "wb") as fh:
             fh.write(response.content)
@@ -478,10 +475,10 @@ if __name__ == "__main__":
         if a.o is None:
             json.dump(data, sys.stdout, indent=4)
         else:
-            filename = filename + ".json" if a.json else filename + ".txt"
+            filename = f"{filename}.json" if a.json else f"{filename}.txt"
             os.makedirs(out_dir, exist_ok=True)
             full_filepath = os.path.join(out_dir, filename)
-            print("Writing output to %s" % full_filepath)
+            print(f"Writing output to {full_filepath}")
             with open(full_filepath, mode="w") as f:
                 if a.json:
                     json.dump(data, f, indent=4)
@@ -502,7 +499,7 @@ if __name__ == "__main__":
             )
             data_replies = parse_replies(ch_replies, users)
             data_replies = "%s\n%s\n\n%s" % (header_str, sep_str, data_replies)
-        save(data_replies, "channel-replies_%s" % channel_id)
+        save(data_replies, f"channel-replies_{channel_id}")
 
     def save_channel(channel_hist, channel_id, channel_list, users):
         if a.json:
@@ -510,13 +507,13 @@ if __name__ == "__main__":
         else:
             data_ch = parse_channel_history(channel_hist, users)
             ch_name, ch_type = name_from_ch_id(channel_id, channel_list)
-            header_str = "%s Name: %s" % (ch_type, ch_name)
+            header_str = f"{ch_type} Name: {ch_name}"
             data_ch = (
                 "Channel ID: %s\n%s\n%s Messages\n%s\n\n"
                 % (channel_id, header_str, len(channel_hist), sep_str)
                 + data_ch
             )
-        save(data_ch, "channel_%s" % channel_id)
+        save(data_ch, f"channel_{channel_id}")
         if a.r:
             save_replies(channel_hist, channel_id, channel_list, users)
 
